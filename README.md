@@ -1,5 +1,7 @@
 # mikrom-cli
 
+[![Go](https://github.com/spluca/mikrom-cli/actions/workflows/go.yml/badge.svg)](https://github.com/spluca/mikrom-cli/actions/workflows/go.yml)
+
 Command-line interface for the [Mikrom](https://github.com/spluca/mikrom) API.
 
 ## Installation
