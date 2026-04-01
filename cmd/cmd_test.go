@@ -436,3 +436,128 @@ func TestAuthLogoutCmd(t *testing.T) {
 		t.Errorf("expected empty token after logout, got %q", cfg.Token)
 	}
 }
+
+// --- auth login ---
+
+func TestAuthLoginCmd_Success(t *testing.T) {
+	body := api.AuthResponse{Token: "new-jwt", User: api.User{ID: "u1", Name: "Alice", Email: "alice@example.com"}}
+	srv := jsonServer(t, http.StatusOK, body)
+	defer srv.Close()
+	setupCfg(srv.URL, "")
+
+	authLoginCmd.Flags().Set("email", "alice@example.com")    //nolint:errcheck
+	authLoginCmd.Flags().Set("password", "secret")            //nolint:errcheck
+
+	out := captureOutput(func() {
+		if err := authLoginCmd.RunE(authLoginCmd, nil); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	if cfg.Token != "new-jwt" {
+		t.Errorf("expected token 'new-jwt', got %q", cfg.Token)
+	}
+	if !strings.Contains(out, "Alice") || !strings.Contains(out, "alice@example.com") {
+		t.Errorf("expected user info in output, got: %s", out)
+	}
+}
+
+func TestAuthLoginCmd_APIError(t *testing.T) {
+	srv := jsonServer(t, http.StatusUnauthorized, map[string]any{"error": "invalid credentials"})
+	defer srv.Close()
+	setupCfg(srv.URL, "")
+
+	authLoginCmd.Flags().Set("email", "bad@example.com")  //nolint:errcheck
+	authLoginCmd.Flags().Set("password", "wrong")         //nolint:errcheck
+
+	err := authLoginCmd.RunE(authLoginCmd, nil)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+// --- auth register ---
+
+func TestAuthRegisterCmd_Success(t *testing.T) {
+	body := api.AuthResponse{Token: "reg-jwt", User: api.User{ID: "u2", Name: "Bob", Email: "bob@example.com"}}
+	srv := jsonServer(t, http.StatusCreated, body)
+	defer srv.Close()
+	setupCfg(srv.URL, "")
+
+	authRegisterCmd.Flags().Set("name", "Bob")               //nolint:errcheck
+	authRegisterCmd.Flags().Set("email", "bob@example.com")  //nolint:errcheck
+	authRegisterCmd.Flags().Set("password", "pass123")       //nolint:errcheck
+
+	out := captureOutput(func() {
+		if err := authRegisterCmd.RunE(authRegisterCmd, nil); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	if cfg.Token != "reg-jwt" {
+		t.Errorf("expected token 'reg-jwt', got %q", cfg.Token)
+	}
+	if !strings.Contains(out, "Bob") || !strings.Contains(out, "bob@example.com") {
+		t.Errorf("expected user info in output, got: %s", out)
+	}
+}
+
+// --- auth profile ---
+
+func TestAuthProfileCmd_Success(t *testing.T) {
+	user := api.User{ID: "u3", Name: "Carol", Email: "carol@example.com"}
+	srv := jsonServer(t, http.StatusOK, user)
+	defer srv.Close()
+	setupCfg(srv.URL, "test-token")
+
+	out := captureOutput(func() {
+		if err := authProfileCmd.RunE(authProfileCmd, nil); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	for _, want := range []string{"u3", "Carol", "carol@example.com"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got: %s", want, out)
+		}
+	}
+}
+
+// --- vm deploy ---
+
+func TestVMDeployCmd_Success(t *testing.T) {
+	vm := api.VM{ID: "deploy-1", Name: "my-app", Status: "building", VCPUs: 2, MemoryMB: 1024}
+	srv := jsonServer(t, http.StatusAccepted, vm)
+	defer srv.Close()
+	setupCfg(srv.URL, "test-token")
+
+	vmDeployCmd.Flags().Set("name", "my-app")                              //nolint:errcheck
+	vmDeployCmd.Flags().Set("repo", "https://github.com/example/app")     //nolint:errcheck
+
+	out := captureOutput(func() {
+		if err := vmDeployCmd.RunE(vmDeployCmd, nil); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "deploy-1") {
+		t.Errorf("expected 'deploy-1' in output, got: %s", out)
+	}
+	if !strings.Contains(out, "building") {
+		t.Errorf("expected 'building' status in output, got: %s", out)
+	}
+}
+
+func TestVMDeployCmd_APIError(t *testing.T) {
+	srv := jsonServer(t, http.StatusUnprocessableEntity, map[string]any{"error": "invalid repo"})
+	defer srv.Close()
+	setupCfg(srv.URL, "test-token")
+
+	vmDeployCmd.Flags().Set("name", "fail-app")                            //nolint:errcheck
+	vmDeployCmd.Flags().Set("repo", "https://github.com/example/bad")     //nolint:errcheck
+
+	err := vmDeployCmd.RunE(vmDeployCmd, nil)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
