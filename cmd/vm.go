@@ -147,6 +147,44 @@ var vmRestartCmd = &cobra.Command{
 	},
 }
 
+var vmDeployCmd = &cobra.Command{
+	Use:   "deploy",
+	Short: "Build an app from source and deploy it as a VM",
+	Long: `Clone a Git repository, build it with Cloud Native Buildpacks,
+and provision a Firecracker microVM from the resulting image.
+
+The VM starts in "building" status and transitions through
+provisioning → running asynchronously. Poll with "mikrom vm get <id>".`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		requireAuth()
+		name, _ := cmd.Flags().GetString("name")
+		desc, _ := cmd.Flags().GetString("description")
+		vcpus, _ := cmd.Flags().GetInt("vcpus")
+		memory, _ := cmd.Flags().GetInt("memory")
+		repoURL, _ := cmd.Flags().GetString("repo")
+		builder, _ := cmd.Flags().GetString("builder")
+		kernelPath, _ := cmd.Flags().GetString("kernel-path")
+
+		vm, err := newClient().DeployVM(api.DeployVMRequest{
+			Name:        name,
+			Description: desc,
+			VCPUCount:   vcpus,
+			MemoryMB:    memory,
+			RepoURL:     repoURL,
+			Builder:     builder,
+			KernelPath:  kernelPath,
+		})
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Deploy queued: %s (status: %s)\n", vm.ID, vm.Status)
+		fmt.Printf("Poll status with: mikrom vm get %s\n", vm.ID)
+		printVM(vm)
+		return nil
+	},
+}
+
 func printVM(vm *api.VM) {
 	fmt.Printf("ID:          %s\n", vm.ID)
 	fmt.Printf("Name:        %s\n", vm.Name)
@@ -167,9 +205,20 @@ func init() {
 	vmCreateCmd.Flags().Int("memory", 512, "Memory in MB (128-32768)")
 	vmCreateCmd.MarkFlagRequired("name")
 
+	vmDeployCmd.Flags().String("name", "", "VM name")
+	vmDeployCmd.Flags().String("description", "", "VM description")
+	vmDeployCmd.Flags().Int("vcpus", 2, "Number of vCPUs (1-32)")
+	vmDeployCmd.Flags().Int("memory", 1024, "Memory in MB (128-32768)")
+	vmDeployCmd.Flags().String("repo", "", "Public Git repository URL to build and deploy")
+	vmDeployCmd.Flags().String("builder", "", "Buildpack builder image (default: paketobuildpacks/builder:base)")
+	vmDeployCmd.Flags().String("kernel-path", "", "Path to the kernel on the firecracker-agent host (optional)")
+	vmDeployCmd.MarkFlagRequired("name")
+	vmDeployCmd.MarkFlagRequired("repo")
+
 	vmCmd.AddCommand(vmListCmd)
 	vmCmd.AddCommand(vmGetCmd)
 	vmCmd.AddCommand(vmCreateCmd)
+	vmCmd.AddCommand(vmDeployCmd)
 	vmCmd.AddCommand(vmDeleteCmd)
 	vmCmd.AddCommand(vmStartCmd)
 	vmCmd.AddCommand(vmStopCmd)

@@ -21,7 +21,7 @@ main.go                   # entry point → cmd.Execute()
 cmd/
   root.go                 # root command, persistent --api-url / --token flags, initConfig()
   auth.go                 # auth {login, register, profile, logout}
-  vm.go                   # vm {list, get, create, delete, start, stop, restart}
+  vm.go                   # vm {list, get, create, deploy, delete, start, stop, restart}
   ippool.go               # ippool {list, get, create, delete, stats}
 internal/
   api/client.go           # HTTP client wrapping all API endpoints

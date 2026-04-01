@@ -204,6 +204,25 @@ func (c *Client) RestartVM(id string) error {
 	return c.decode(resp, nil)
 }
 
+type DeployVMRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	VCPUCount   int    `json:"vcpu_count"`
+	MemoryMB    int    `json:"memory_mb"`
+	RepoURL     string `json:"repo_url"`
+	Builder     string `json:"builder,omitempty"`
+	KernelPath  string `json:"kernel_path,omitempty"`
+}
+
+func (c *Client) DeployVM(req DeployVMRequest) (*VM, error) {
+	resp, err := c.do(http.MethodPost, "/api/v1/vms/build", req)
+	if err != nil {
+		return nil, err
+	}
+	var out VM
+	return &out, c.decode(resp, &out)
+}
+
 // IP Pools
 
 type IPPool struct {
