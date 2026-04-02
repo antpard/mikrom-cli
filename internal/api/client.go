@@ -81,15 +81,20 @@ type RegisterRequest struct {
 	Name     string `json:"name"`
 }
 
+type User struct {
+	ID    int    `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
 type AuthResponse struct {
 	Token string `json:"token"`
 	User  User   `json:"user"`
 }
 
-type User struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	Name  string `json:"name"`
+type RegisterResponse struct {
+	Message string `json:"message"`
+	User    User   `json:"user"`
 }
 
 func (c *Client) Login(email, password string) (*AuthResponse, error) {
@@ -101,12 +106,12 @@ func (c *Client) Login(email, password string) (*AuthResponse, error) {
 	return &out, c.decode(resp, &out)
 }
 
-func (c *Client) Register(email, password, name string) (*AuthResponse, error) {
+func (c *Client) Register(email, password, name string) (*RegisterResponse, error) {
 	resp, err := c.do(http.MethodPost, "/api/v1/auth/register", RegisterRequest{Email: email, Password: password, Name: name})
 	if err != nil {
 		return nil, err
 	}
-	var out AuthResponse
+	var out RegisterResponse
 	return &out, c.decode(resp, &out)
 }
 
@@ -136,13 +141,21 @@ type CreateVMRequest struct {
 	Description string `json:"description,omitempty"`
 	VCPUCount   int    `json:"vcpu_count"`
 	MemoryMB    int    `json:"memory_mb"`
+	KernelPath  string `json:"kernel_path,omitempty"`
+	RootfsPath  string `json:"rootfs_path,omitempty"`
+}
+
+type UpdateVMRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
 }
 
 type ListVMsResponse struct {
-	Items      []VM `json:"items"`
-	Total      int  `json:"total"`
-	Page       int  `json:"page"`
-	PageSize   int  `json:"page_size"`
+	Items      []VM  `json:"items"`
+	Total      int64 `json:"total"`
+	Page       int   `json:"page"`
+	PageSize   int   `json:"page_size"`
+	TotalPages int   `json:"total_pages"`
 }
 
 func (c *Client) ListVMs(page, pageSize int) (*ListVMsResponse, error) {
@@ -165,6 +178,15 @@ func (c *Client) GetVM(id string) (*VM, error) {
 
 func (c *Client) CreateVM(req CreateVMRequest) (*VM, error) {
 	resp, err := c.do(http.MethodPost, "/api/v1/vms", req)
+	if err != nil {
+		return nil, err
+	}
+	var out VM
+	return &out, c.decode(resp, &out)
+}
+
+func (c *Client) UpdateVM(id string, req UpdateVMRequest) (*VM, error) {
+	resp, err := c.do(http.MethodPatch, "/api/v1/vms/"+id, req)
 	if err != nil {
 		return nil, err
 	}
@@ -226,33 +248,58 @@ func (c *Client) DeployVM(req DeployVMRequest) (*VM, error) {
 // IP Pools
 
 type IPPool struct {
-	ID        string `json:"id"`
+	ID        int    `json:"id"`
 	Name      string `json:"name"`
+	Network   string `json:"network"`
 	CIDR      string `json:"cidr"`
 	Gateway   string `json:"gateway"`
 	StartIP   string `json:"start_ip"`
 	EndIP     string `json:"end_ip"`
+	IsActive  bool   `json:"is_active"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 type CreateIPPoolRequest struct {
 	Name    string `json:"name"`
+	Network string `json:"network"`
 	CIDR    string `json:"cidr"`
 	Gateway string `json:"gateway"`
 	StartIP string `json:"start_ip"`
 	EndIP   string `json:"end_ip"`
 }
 
-type ListIPPoolsResponse struct {
-	IPPools  []IPPool `json:"ip_pools"`
-	Total    int      `json:"total"`
-	Page     int      `json:"page"`
-	PageSize int      `json:"page_size"`
+type UpdateIPPoolRequest struct {
+	Name     *string `json:"name,omitempty"`
+	IsActive *bool   `json:"is_active,omitempty"`
 }
 
-type IPPoolStats struct {
-	Total     int `json:"total"`
-	Allocated int `json:"allocated"`
-	Available int `json:"available"`
+type ListIPPoolsResponse struct {
+	Items      []IPPool `json:"items"`
+	Total      int64    `json:"total"`
+	Page       int      `json:"page"`
+	PageSize   int      `json:"page_size"`
+	TotalPages int      `json:"total_pages"`
+}
+
+type IPPoolStatsResponse struct {
+	PoolID       int     `json:"pool_id"`
+	PoolName     string  `json:"pool_name"`
+	Total        int64   `json:"total"`
+	Allocated    int64   `json:"allocated"`
+	Available    int64   `json:"available"`
+	UsagePercent float64 `json:"usage_percent"`
+}
+
+type SuggestIPRangeResponse struct {
+	CIDR             string `json:"cidr"`
+	NetworkAddress   string `json:"network_address"`
+	FirstUsableIP    string `json:"first_usable_ip"`
+	LastUsableIP     string `json:"last_usable_ip"`
+	BroadcastAddress string `json:"broadcast_address"`
+	TotalHosts       int    `json:"total_hosts"`
+	SuggestedStart   string `json:"suggested_start"`
+	SuggestedEnd     string `json:"suggested_end"`
 }
 
 func (c *Client) ListIPPools(page, pageSize int) (*ListIPPoolsResponse, error) {
@@ -264,8 +311,8 @@ func (c *Client) ListIPPools(page, pageSize int) (*ListIPPoolsResponse, error) {
 	return &out, c.decode(resp, &out)
 }
 
-func (c *Client) GetIPPool(id string) (*IPPool, error) {
-	resp, err := c.do(http.MethodGet, "/api/v1/ippools/"+id, nil)
+func (c *Client) GetIPPool(id int) (*IPPool, error) {
+	resp, err := c.do(http.MethodGet, fmt.Sprintf("/api/v1/ippools/%d", id), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -282,19 +329,51 @@ func (c *Client) CreateIPPool(req CreateIPPoolRequest) (*IPPool, error) {
 	return &out, c.decode(resp, &out)
 }
 
-func (c *Client) DeleteIPPool(id string) error {
-	resp, err := c.do(http.MethodDelete, "/api/v1/ippools/"+id, nil)
+func (c *Client) UpdateIPPool(id int, req UpdateIPPoolRequest) (*IPPool, error) {
+	resp, err := c.do(http.MethodPatch, fmt.Sprintf("/api/v1/ippools/%d", id), req)
+	if err != nil {
+		return nil, err
+	}
+	var out IPPool
+	return &out, c.decode(resp, &out)
+}
+
+func (c *Client) DeleteIPPool(id int) error {
+	resp, err := c.do(http.MethodDelete, fmt.Sprintf("/api/v1/ippools/%d", id), nil)
 	if err != nil {
 		return err
 	}
 	return c.decode(resp, nil)
 }
 
-func (c *Client) GetIPPoolStats(id string) (*IPPoolStats, error) {
-	resp, err := c.do(http.MethodGet, "/api/v1/ippools/"+id+"/stats", nil)
+func (c *Client) GetIPPoolStats(id int) (*IPPoolStatsResponse, error) {
+	resp, err := c.do(http.MethodGet, fmt.Sprintf("/api/v1/ippools/%d/stats", id), nil)
 	if err != nil {
 		return nil, err
 	}
-	var out IPPoolStats
+	var out IPPoolStatsResponse
+	return &out, c.decode(resp, &out)
+}
+
+func (c *Client) GetAllPoolStats() ([]IPPoolStatsResponse, error) {
+	resp, err := c.do(http.MethodGet, "/api/v1/ippools/stats", nil)
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Pools []IPPoolStatsResponse `json:"pools"`
+	}
+	if err := c.decode(resp, &wrapper); err != nil {
+		return nil, err
+	}
+	return wrapper.Pools, nil
+}
+
+func (c *Client) SuggestIPRange(cidr string) (*SuggestIPRangeResponse, error) {
+	resp, err := c.do(http.MethodPost, "/api/v1/ippools/suggest-range", map[string]string{"cidr": cidr})
+	if err != nil {
+		return nil, err
+	}
+	var out SuggestIPRangeResponse
 	return &out, c.decode(resp, &out)
 }

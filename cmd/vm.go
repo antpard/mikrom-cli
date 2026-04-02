@@ -66,12 +66,16 @@ var vmCreateCmd = &cobra.Command{
 		desc, _ := cmd.Flags().GetString("description")
 		vcpus, _ := cmd.Flags().GetInt("vcpus")
 		memory, _ := cmd.Flags().GetInt("memory")
+		kernelPath, _ := cmd.Flags().GetString("kernel-path")
+		rootfsPath, _ := cmd.Flags().GetString("rootfs-path")
 
 		vm, err := newClient().CreateVM(api.CreateVMRequest{
 			Name:        name,
 			Description: desc,
 			VCPUCount:   vcpus,
 			MemoryMB:    memory,
+			KernelPath:  kernelPath,
+			RootfsPath:  rootfsPath,
 		})
 		if err != nil {
 			return err
@@ -147,6 +151,33 @@ var vmRestartCmd = &cobra.Command{
 	},
 }
 
+var vmUpdateCmd = &cobra.Command{
+	Use:   "update <vm-id>",
+	Short: "Update VM metadata",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		requireAuth()
+
+		req := api.UpdateVMRequest{}
+		if cmd.Flags().Changed("name") {
+			name, _ := cmd.Flags().GetString("name")
+			req.Name = &name
+		}
+		if cmd.Flags().Changed("description") {
+			desc, _ := cmd.Flags().GetString("description")
+			req.Description = &desc
+		}
+
+		vm, err := newClient().UpdateVM(args[0], req)
+		if err != nil {
+			return err
+		}
+
+		printVM(vm)
+		return nil
+	},
+}
+
 var vmDeployCmd = &cobra.Command{
 	Use:   "deploy",
 	Short: "Build an app from source and deploy it as a VM",
@@ -203,7 +234,12 @@ func init() {
 	vmCreateCmd.Flags().String("description", "", "VM description")
 	vmCreateCmd.Flags().Int("vcpus", 1, "Number of vCPUs (1-32)")
 	vmCreateCmd.Flags().Int("memory", 512, "Memory in MB (128-32768)")
+	vmCreateCmd.Flags().String("kernel-path", "", "Path to kernel on the agent host (optional)")
+	vmCreateCmd.Flags().String("rootfs-path", "", "Path to rootfs on the agent host (optional)")
 	vmCreateCmd.MarkFlagRequired("name")
+
+	vmUpdateCmd.Flags().String("name", "", "New VM name")
+	vmUpdateCmd.Flags().String("description", "", "New VM description")
 
 	vmDeployCmd.Flags().String("name", "", "VM name")
 	vmDeployCmd.Flags().String("description", "", "VM description")
@@ -218,6 +254,7 @@ func init() {
 	vmCmd.AddCommand(vmListCmd)
 	vmCmd.AddCommand(vmGetCmd)
 	vmCmd.AddCommand(vmCreateCmd)
+	vmCmd.AddCommand(vmUpdateCmd)
 	vmCmd.AddCommand(vmDeployCmd)
 	vmCmd.AddCommand(vmDeleteCmd)
 	vmCmd.AddCommand(vmStartCmd)

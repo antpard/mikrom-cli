@@ -58,7 +58,7 @@ func TestPrintVM(t *testing.T) {
 		Name:        "my-vm",
 		Description: "test machine",
 		Status:      "running",
-		VCPUCount:       2,
+		VCPUCount:   2,
 		MemoryMB:    512,
 		IPAddress:   "10.0.0.1",
 	}
@@ -76,8 +76,9 @@ func TestPrintVM(t *testing.T) {
 
 func TestPrintIPPool(t *testing.T) {
 	p := &api.IPPool{
-		ID:      "pool-1",
+		ID:      1,
 		Name:    "prod-pool",
+		Network: "10.0.0.0",
 		CIDR:    "10.0.0.0/24",
 		Gateway: "10.0.0.1",
 		StartIP: "10.0.0.10",
@@ -86,7 +87,7 @@ func TestPrintIPPool(t *testing.T) {
 
 	out := captureOutput(func() { printIPPool(p) })
 
-	for _, want := range []string{"pool-1", "prod-pool", "10.0.0.0/24", "10.0.0.1", "10.0.0.10", "10.0.0.200"} {
+	for _, want := range []string{"1", "prod-pool", "10.0.0.0/24", "10.0.0.1", "10.0.0.10", "10.0.0.200"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("printIPPool output missing %q; got:\n%s", want, out)
 		}
@@ -112,7 +113,7 @@ func TestVMListCmd_NoVMs(t *testing.T) {
 
 func TestVMListCmd_WithVMs(t *testing.T) {
 	body := api.ListVMsResponse{
-		Items:   []api.VM{{ID: "vm-1", Name: "alpha", Status: "running", VCPUCount: 1, MemoryMB: 256}},
+		Items: []api.VM{{ID: "vm-1", Name: "alpha", Status: "running", VCPUCount: 1, MemoryMB: 256}},
 		Total: 1,
 	}
 	srv := jsonServer(t, http.StatusOK, body)
@@ -184,9 +185,9 @@ func TestVMCreateCmd_Success(t *testing.T) {
 	defer srv.Close()
 	setupCfg(srv.URL, "test-token")
 
-	vmCreateCmd.Flags().Set("name", "fresh")        //nolint:errcheck
-	vmCreateCmd.Flags().Set("vcpus", "2")            //nolint:errcheck
-	vmCreateCmd.Flags().Set("memory", "256")         //nolint:errcheck
+	vmCreateCmd.Flags().Set("name", "fresh")  //nolint:errcheck
+	vmCreateCmd.Flags().Set("vcpus", "2")     //nolint:errcheck
+	vmCreateCmd.Flags().Set("memory", "256")  //nolint:errcheck
 
 	out := captureOutput(func() {
 		if err := vmCreateCmd.RunE(vmCreateCmd, nil); err != nil {
@@ -304,7 +305,7 @@ func TestVMRestartCmd(t *testing.T) {
 // --- ippool list ---
 
 func TestIPPoolListCmd_NoPools(t *testing.T) {
-	srv := jsonServer(t, http.StatusOK, api.ListIPPoolsResponse{IPPools: []api.IPPool{}, Total: 0})
+	srv := jsonServer(t, http.StatusOK, api.ListIPPoolsResponse{Items: []api.IPPool{}, Total: 0})
 	defer srv.Close()
 	setupCfg(srv.URL, "test-token")
 
@@ -320,8 +321,8 @@ func TestIPPoolListCmd_NoPools(t *testing.T) {
 
 func TestIPPoolListCmd_WithPools(t *testing.T) {
 	body := api.ListIPPoolsResponse{
-		IPPools: []api.IPPool{{ID: "p-1", Name: "main", CIDR: "10.0.0.0/24", StartIP: "10.0.0.10", EndIP: "10.0.0.200"}},
-		Total:   1,
+		Items: []api.IPPool{{ID: 1, Name: "main", CIDR: "10.0.0.0/24", StartIP: "10.0.0.10", EndIP: "10.0.0.200"}},
+		Total: 1,
 	}
 	srv := jsonServer(t, http.StatusOK, body)
 	defer srv.Close()
@@ -332,7 +333,7 @@ func TestIPPoolListCmd_WithPools(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
-	if !strings.Contains(out, "p-1") || !strings.Contains(out, "main") {
+	if !strings.Contains(out, "1") || !strings.Contains(out, "main") {
 		t.Errorf("expected pool data in output, got: %s", out)
 	}
 }
@@ -340,18 +341,27 @@ func TestIPPoolListCmd_WithPools(t *testing.T) {
 // --- ippool get ---
 
 func TestIPPoolGetCmd_Success(t *testing.T) {
-	pool := api.IPPool{ID: "pool-abc", Name: "test-pool", CIDR: "192.168.1.0/24", Gateway: "192.168.1.1"}
+	pool := api.IPPool{ID: 1, Name: "test-pool", CIDR: "192.168.1.0/24", Gateway: "192.168.1.1"}
 	srv := jsonServer(t, http.StatusOK, pool)
 	defer srv.Close()
 	setupCfg(srv.URL, "test-token")
 
 	out := captureOutput(func() {
-		if err := ippoolGetCmd.RunE(ippoolGetCmd, []string{"pool-abc"}); err != nil {
+		if err := ippoolGetCmd.RunE(ippoolGetCmd, []string{"1"}); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
-	if !strings.Contains(out, "pool-abc") || !strings.Contains(out, "192.168.1.0/24") {
+	if !strings.Contains(out, "192.168.1.0/24") {
 		t.Errorf("expected pool data in output, got: %s", out)
+	}
+}
+
+func TestIPPoolGetCmd_InvalidID(t *testing.T) {
+	setupCfg("http://localhost:8080", "test-token")
+
+	err := ippoolGetCmd.RunE(ippoolGetCmd, []string{"not-a-number"})
+	if err == nil {
+		t.Error("expected error for non-numeric ID, got nil")
 	}
 }
 
@@ -362,24 +372,25 @@ func TestIPPoolCreateCmd_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&gotBody) //nolint:errcheck
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(api.IPPool{ID: "new-pool", Name: "prod"}) //nolint:errcheck
+		json.NewEncoder(w).Encode(api.IPPool{ID: 3, Name: "prod"}) //nolint:errcheck
 	}))
 	defer srv.Close()
 	setupCfg(srv.URL, "test-token")
 
-	ippoolCreateCmd.Flags().Set("name", "prod")           //nolint:errcheck
-	ippoolCreateCmd.Flags().Set("cidr", "10.1.0.0/24")    //nolint:errcheck
-	ippoolCreateCmd.Flags().Set("gateway", "10.1.0.1")    //nolint:errcheck
-	ippoolCreateCmd.Flags().Set("start-ip", "10.1.0.10")  //nolint:errcheck
-	ippoolCreateCmd.Flags().Set("end-ip", "10.1.0.200")   //nolint:errcheck
+	ippoolCreateCmd.Flags().Set("name", "prod")              //nolint:errcheck
+	ippoolCreateCmd.Flags().Set("network", "10.1.0.0")       //nolint:errcheck
+	ippoolCreateCmd.Flags().Set("cidr", "10.1.0.0/24")       //nolint:errcheck
+	ippoolCreateCmd.Flags().Set("gateway", "10.1.0.1")       //nolint:errcheck
+	ippoolCreateCmd.Flags().Set("start-ip", "10.1.0.10")     //nolint:errcheck
+	ippoolCreateCmd.Flags().Set("end-ip", "10.1.0.200")      //nolint:errcheck
 
 	out := captureOutput(func() {
 		if err := ippoolCreateCmd.RunE(ippoolCreateCmd, nil); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
-	if !strings.Contains(out, "new-pool") {
-		t.Errorf("expected 'new-pool' in output, got: %s", out)
+	if !strings.Contains(out, "3") {
+		t.Errorf("expected pool ID in output, got: %s", out)
 	}
 	if gotBody.CIDR != "10.1.0.0/24" {
 		t.Errorf("CIDR: got %q, want 10.1.0.0/24", gotBody.CIDR)
@@ -394,25 +405,25 @@ func TestIPPoolDeleteCmd_Success(t *testing.T) {
 	setupCfg(srv.URL, "test-token")
 
 	out := captureOutput(func() {
-		if err := ippoolDeleteCmd.RunE(ippoolDeleteCmd, []string{"pool-del"}); err != nil {
+		if err := ippoolDeleteCmd.RunE(ippoolDeleteCmd, []string{"1"}); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
-	if !strings.Contains(out, "pool-del") {
-		t.Errorf("expected 'pool-del' in output, got: %s", out)
+	if !strings.Contains(out, "1") {
+		t.Errorf("expected pool ID in output, got: %s", out)
 	}
 }
 
 // --- ippool stats ---
 
 func TestIPPoolStatsCmd_Success(t *testing.T) {
-	stats := api.IPPoolStats{Total: 100, Allocated: 40, Available: 60}
+	stats := api.IPPoolStatsResponse{PoolID: 1, PoolName: "main", Total: 100, Allocated: 40, Available: 60, UsagePercent: 40.0}
 	srv := jsonServer(t, http.StatusOK, stats)
 	defer srv.Close()
 	setupCfg(srv.URL, "test-token")
 
 	out := captureOutput(func() {
-		if err := ippoolStatsCmd.RunE(ippoolStatsCmd, []string{"pool-x"}); err != nil {
+		if err := ippoolStatsCmd.RunE(ippoolStatsCmd, []string{"1"}); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
@@ -440,13 +451,13 @@ func TestAuthLogoutCmd(t *testing.T) {
 // --- auth login ---
 
 func TestAuthLoginCmd_Success(t *testing.T) {
-	body := api.AuthResponse{Token: "new-jwt", User: api.User{ID: "u1", Name: "Alice", Email: "alice@example.com"}}
+	body := api.AuthResponse{Token: "new-jwt", User: api.User{ID: 1, Name: "Alice", Email: "alice@example.com"}}
 	srv := jsonServer(t, http.StatusOK, body)
 	defer srv.Close()
 	setupCfg(srv.URL, "")
 
-	authLoginCmd.Flags().Set("email", "alice@example.com")    //nolint:errcheck
-	authLoginCmd.Flags().Set("password", "secret")            //nolint:errcheck
+	authLoginCmd.Flags().Set("email", "alice@example.com") //nolint:errcheck
+	authLoginCmd.Flags().Set("password", "secret")         //nolint:errcheck
 
 	out := captureOutput(func() {
 		if err := authLoginCmd.RunE(authLoginCmd, nil); err != nil {
@@ -467,8 +478,8 @@ func TestAuthLoginCmd_APIError(t *testing.T) {
 	defer srv.Close()
 	setupCfg(srv.URL, "")
 
-	authLoginCmd.Flags().Set("email", "bad@example.com")  //nolint:errcheck
-	authLoginCmd.Flags().Set("password", "wrong")         //nolint:errcheck
+	authLoginCmd.Flags().Set("email", "bad@example.com") //nolint:errcheck
+	authLoginCmd.Flags().Set("password", "wrong")        //nolint:errcheck
 
 	err := authLoginCmd.RunE(authLoginCmd, nil)
 	if err == nil {
@@ -479,14 +490,14 @@ func TestAuthLoginCmd_APIError(t *testing.T) {
 // --- auth register ---
 
 func TestAuthRegisterCmd_Success(t *testing.T) {
-	body := api.AuthResponse{Token: "reg-jwt", User: api.User{ID: "u2", Name: "Bob", Email: "bob@example.com"}}
+	body := api.RegisterResponse{Message: "User created successfully", User: api.User{ID: 2, Name: "Bob", Email: "bob@example.com"}}
 	srv := jsonServer(t, http.StatusCreated, body)
 	defer srv.Close()
 	setupCfg(srv.URL, "")
 
-	authRegisterCmd.Flags().Set("name", "Bob")               //nolint:errcheck
-	authRegisterCmd.Flags().Set("email", "bob@example.com")  //nolint:errcheck
-	authRegisterCmd.Flags().Set("password", "pass123")       //nolint:errcheck
+	authRegisterCmd.Flags().Set("name", "Bob")              //nolint:errcheck
+	authRegisterCmd.Flags().Set("email", "bob@example.com") //nolint:errcheck
+	authRegisterCmd.Flags().Set("password", "pass123")      //nolint:errcheck
 
 	out := captureOutput(func() {
 		if err := authRegisterCmd.RunE(authRegisterCmd, nil); err != nil {
@@ -494,9 +505,6 @@ func TestAuthRegisterCmd_Success(t *testing.T) {
 		}
 	})
 
-	if cfg.Token != "reg-jwt" {
-		t.Errorf("expected token 'reg-jwt', got %q", cfg.Token)
-	}
 	if !strings.Contains(out, "Bob") || !strings.Contains(out, "bob@example.com") {
 		t.Errorf("expected user info in output, got: %s", out)
 	}
@@ -505,7 +513,7 @@ func TestAuthRegisterCmd_Success(t *testing.T) {
 // --- auth profile ---
 
 func TestAuthProfileCmd_Success(t *testing.T) {
-	user := api.User{ID: "u3", Name: "Carol", Email: "carol@example.com"}
+	user := api.User{ID: 3, Name: "Carol", Email: "carol@example.com"}
 	srv := jsonServer(t, http.StatusOK, user)
 	defer srv.Close()
 	setupCfg(srv.URL, "test-token")
@@ -516,7 +524,7 @@ func TestAuthProfileCmd_Success(t *testing.T) {
 		}
 	})
 
-	for _, want := range []string{"u3", "Carol", "carol@example.com"} {
+	for _, want := range []string{"3", "Carol", "carol@example.com"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in output, got: %s", want, out)
 		}
@@ -531,8 +539,8 @@ func TestVMDeployCmd_Success(t *testing.T) {
 	defer srv.Close()
 	setupCfg(srv.URL, "test-token")
 
-	vmDeployCmd.Flags().Set("name", "my-app")                              //nolint:errcheck
-	vmDeployCmd.Flags().Set("repo", "https://github.com/example/app")     //nolint:errcheck
+	vmDeployCmd.Flags().Set("name", "my-app")                          //nolint:errcheck
+	vmDeployCmd.Flags().Set("repo", "https://github.com/example/app") //nolint:errcheck
 
 	out := captureOutput(func() {
 		if err := vmDeployCmd.RunE(vmDeployCmd, nil); err != nil {

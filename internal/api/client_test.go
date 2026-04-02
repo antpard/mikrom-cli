@@ -137,7 +137,7 @@ func TestDo_ContentTypeHeader(t *testing.T) {
 // --- Auth ---
 
 func TestLogin_Success(t *testing.T) {
-	want := AuthResponse{Token: "jwt-token", User: User{ID: "1", Email: "a@b.com", Name: "Alice"}}
+	want := AuthResponse{Token: "jwt-token", User: User{ID: 1, Email: "a@b.com", Name: "Alice"}}
 	srv := newTestServer(t, http.StatusOK, want)
 	defer srv.Close()
 
@@ -182,8 +182,8 @@ func TestLogin_SendsCorrectBody(t *testing.T) {
 }
 
 func TestRegister_Success(t *testing.T) {
-	want := AuthResponse{Token: "new-token", User: User{ID: "2", Email: "b@c.com", Name: "Bob"}}
-	srv := newTestServer(t, http.StatusOK, want)
+	want := RegisterResponse{Message: "User created successfully", User: User{ID: 2, Email: "b@c.com", Name: "Bob"}}
+	srv := newTestServer(t, http.StatusCreated, want)
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "")
@@ -194,13 +194,16 @@ func TestRegister_Success(t *testing.T) {
 	if got.User.Name != "Bob" {
 		t.Errorf("Name: got %q, want %q", got.User.Name, "Bob")
 	}
+	if got.Message == "" {
+		t.Error("expected non-empty message")
+	}
 }
 
 func TestRegister_SendsCorrectBody(t *testing.T) {
 	var got RegisterRequest
 	srv := newTestServerFunc(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&got)
-		json.NewEncoder(w).Encode(AuthResponse{Token: "t"})
+		json.NewEncoder(w).Encode(RegisterResponse{Message: "ok"})
 	})
 	defer srv.Close()
 
@@ -213,7 +216,7 @@ func TestRegister_SendsCorrectBody(t *testing.T) {
 }
 
 func TestProfile_Success(t *testing.T) {
-	want := User{ID: "3", Email: "c@d.com", Name: "Carol"}
+	want := User{ID: 3, Email: "c@d.com", Name: "Carol"}
 	srv := newTestServer(t, http.StatusOK, want)
 	defer srv.Close()
 
@@ -223,7 +226,7 @@ func TestProfile_Success(t *testing.T) {
 		t.Fatalf("Profile() error: %v", err)
 	}
 	if got.ID != want.ID {
-		t.Errorf("ID: got %q, want %q", got.ID, want.ID)
+		t.Errorf("ID: got %d, want %d", got.ID, want.ID)
 	}
 }
 
@@ -242,7 +245,7 @@ func TestProfile_Error(t *testing.T) {
 
 func TestListVMs_Success(t *testing.T) {
 	want := ListVMsResponse{
-		Items:      []VM{{ID: "vm1", Name: "test-vm", Status: "running"}},
+		Items:    []VM{{ID: "vm1", Name: "test-vm", Status: "running"}},
 		Total:    1,
 		Page:     1,
 		PageSize: 10,
@@ -325,6 +328,29 @@ func TestCreateVM_Success(t *testing.T) {
 	}
 	if gotBody.Name != "fresh" || gotBody.VCPUCount != 1 {
 		t.Errorf("unexpected request body: %+v", gotBody)
+	}
+}
+
+func TestUpdateVM_Success(t *testing.T) {
+	name := "renamed"
+	want := VM{ID: "vm-abc", Name: "renamed", Status: "running"}
+	var gotPath string
+	srv := newTestServerFunc(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewEncoder(w).Encode(want)
+	})
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "tok")
+	got, err := c.UpdateVM("vm-abc", UpdateVMRequest{Name: &name})
+	if err != nil {
+		t.Fatalf("UpdateVM() error: %v", err)
+	}
+	if got.Name != "renamed" {
+		t.Errorf("Name: got %q, want renamed", got.Name)
+	}
+	if gotPath != "/api/v1/vms/vm-abc" {
+		t.Errorf("path: got %q, want /api/v1/vms/vm-abc", gotPath)
 	}
 }
 
@@ -432,7 +458,7 @@ func TestRestartVM_UsesCorrectPath(t *testing.T) {
 
 func TestListIPPools_Success(t *testing.T) {
 	want := ListIPPoolsResponse{
-		IPPools:  []IPPool{{ID: "pool1", Name: "main-pool", CIDR: "10.0.0.0/24"}},
+		Items:    []IPPool{{ID: 1, Name: "main-pool", CIDR: "10.0.0.0/24"}},
 		Total:    1,
 		Page:     1,
 		PageSize: 20,
@@ -449,8 +475,8 @@ func TestListIPPools_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListIPPools() error: %v", err)
 	}
-	if len(got.IPPools) != 1 || got.IPPools[0].ID != "pool1" {
-		t.Errorf("unexpected IPPools: %+v", got.IPPools)
+	if len(got.Items) != 1 || got.Items[0].ID != 1 {
+		t.Errorf("unexpected Items: %+v", got.Items)
 	}
 	if gotURL != "/api/v1/ippools?page=1&page_size=20" {
 		t.Errorf("unexpected URL: %q", gotURL)
@@ -458,12 +484,12 @@ func TestListIPPools_Success(t *testing.T) {
 }
 
 func TestGetIPPool_Success(t *testing.T) {
-	want := IPPool{ID: "pool-abc", Name: "test-pool", CIDR: "192.168.1.0/24", Gateway: "192.168.1.1"}
+	want := IPPool{ID: 1, Name: "test-pool", CIDR: "192.168.1.0/24", Gateway: "192.168.1.1"}
 	srv := newTestServer(t, http.StatusOK, want)
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "tok")
-	got, err := c.GetIPPool("pool-abc")
+	got, err := c.GetIPPool(1)
 	if err != nil {
 		t.Fatalf("GetIPPool() error: %v", err)
 	}
@@ -477,14 +503,14 @@ func TestGetIPPool_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "tok")
-	_, err := c.GetIPPool("missing")
+	_, err := c.GetIPPool(999)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
 func TestCreateIPPool_Success(t *testing.T) {
-	want := IPPool{ID: "new-pool", Name: "prod-pool", CIDR: "10.1.0.0/24"}
+	want := IPPool{ID: 5, Name: "prod-pool", CIDR: "10.1.0.0/24"}
 	var gotBody CreateIPPoolRequest
 	srv := newTestServerFunc(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&gotBody)
@@ -493,17 +519,40 @@ func TestCreateIPPool_Success(t *testing.T) {
 	})
 	defer srv.Close()
 
-	req := CreateIPPoolRequest{Name: "prod-pool", CIDR: "10.1.0.0/24", Gateway: "10.1.0.1", StartIP: "10.1.0.10", EndIP: "10.1.0.200"}
+	req := CreateIPPoolRequest{Name: "prod-pool", Network: "10.1.0.0", CIDR: "10.1.0.0/24", Gateway: "10.1.0.1", StartIP: "10.1.0.10", EndIP: "10.1.0.200"}
 	c := NewClient(srv.URL, "tok")
 	got, err := c.CreateIPPool(req)
 	if err != nil {
 		t.Fatalf("CreateIPPool() error: %v", err)
 	}
 	if got.ID != want.ID {
-		t.Errorf("ID: got %q, want %q", got.ID, want.ID)
+		t.Errorf("ID: got %d, want %d", got.ID, want.ID)
 	}
 	if gotBody.CIDR != "10.1.0.0/24" {
 		t.Errorf("unexpected body: %+v", gotBody)
+	}
+}
+
+func TestUpdateIPPool_Success(t *testing.T) {
+	name := "updated-pool"
+	want := IPPool{ID: 1, Name: "updated-pool"}
+	var gotPath string
+	srv := newTestServerFunc(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewEncoder(w).Encode(want)
+	})
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "tok")
+	got, err := c.UpdateIPPool(1, UpdateIPPoolRequest{Name: &name})
+	if err != nil {
+		t.Fatalf("UpdateIPPool() error: %v", err)
+	}
+	if got.Name != "updated-pool" {
+		t.Errorf("Name: got %q, want updated-pool", got.Name)
+	}
+	if gotPath != "/api/v1/ippools/1" {
+		t.Errorf("path: got %q, want /api/v1/ippools/1", gotPath)
 	}
 }
 
@@ -512,7 +561,7 @@ func TestDeleteIPPool_Success(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "tok")
-	if err := c.DeleteIPPool("pool1"); err != nil {
+	if err := c.DeleteIPPool(1); err != nil {
 		t.Errorf("DeleteIPPool() error: %v", err)
 	}
 }
@@ -522,13 +571,13 @@ func TestDeleteIPPool_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "tok")
-	if err := c.DeleteIPPool("pool1"); err == nil {
+	if err := c.DeleteIPPool(1); err == nil {
 		t.Error("expected error, got nil")
 	}
 }
 
 func TestGetIPPoolStats_Success(t *testing.T) {
-	want := IPPoolStats{Total: 100, Allocated: 30, Available: 70}
+	want := IPPoolStatsResponse{PoolID: 1, PoolName: "main", Total: 100, Allocated: 30, Available: 70, UsagePercent: 30.0}
 	var gotPath string
 	srv := newTestServerFunc(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
@@ -537,15 +586,15 @@ func TestGetIPPoolStats_Success(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "tok")
-	got, err := c.GetIPPoolStats("pool-xyz")
+	got, err := c.GetIPPoolStats(1)
 	if err != nil {
 		t.Fatalf("GetIPPoolStats() error: %v", err)
 	}
 	if got.Total != 100 || got.Allocated != 30 || got.Available != 70 {
 		t.Errorf("unexpected stats: %+v", got)
 	}
-	if gotPath != "/api/v1/ippools/pool-xyz/stats" {
-		t.Errorf("path: got %q, want /api/v1/ippools/pool-xyz/stats", gotPath)
+	if gotPath != "/api/v1/ippools/1/stats" {
+		t.Errorf("path: got %q, want /api/v1/ippools/1/stats", gotPath)
 	}
 }
 
@@ -554,9 +603,55 @@ func TestGetIPPoolStats_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "tok")
-	_, err := c.GetIPPoolStats("missing")
+	_, err := c.GetIPPoolStats(999)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestGetAllPoolStats_Success(t *testing.T) {
+	want := map[string]any{
+		"pools": []IPPoolStatsResponse{
+			{PoolID: 1, PoolName: "main", Total: 100, Allocated: 30, Available: 70, UsagePercent: 30.0},
+			{PoolID: 2, PoolName: "dev", Total: 50, Allocated: 5, Available: 45, UsagePercent: 10.0},
+		},
+	}
+	srv := newTestServer(t, http.StatusOK, want)
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "tok")
+	got, err := c.GetAllPoolStats()
+	if err != nil {
+		t.Fatalf("GetAllPoolStats() error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 pools, got %d", len(got))
+	}
+}
+
+func TestSuggestIPRange_Success(t *testing.T) {
+	want := SuggestIPRangeResponse{
+		CIDR:           "10.0.0.0/24",
+		SuggestedStart: "10.0.0.11",
+		SuggestedEnd:   "10.0.0.240",
+	}
+	var gotPath string
+	srv := newTestServerFunc(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewEncoder(w).Encode(want)
+	})
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "tok")
+	got, err := c.SuggestIPRange("10.0.0.0/24")
+	if err != nil {
+		t.Fatalf("SuggestIPRange() error: %v", err)
+	}
+	if got.SuggestedStart != "10.0.0.11" {
+		t.Errorf("SuggestedStart: got %q, want 10.0.0.11", got.SuggestedStart)
+	}
+	if gotPath != "/api/v1/ippools/suggest-range" {
+		t.Errorf("path: got %q, want /api/v1/ippools/suggest-range", gotPath)
 	}
 }
 

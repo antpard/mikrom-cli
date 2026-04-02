@@ -47,12 +47,7 @@ var authRegisterCmd = &cobra.Command{
 			return err
 		}
 
-		cfg.Token = resp.Token
-		if err := cfg.Save(); err != nil {
-			return fmt.Errorf("registration succeeded but failed to save config: %w", err)
-		}
-
-		fmt.Printf("Account created for %s (%s)\n", resp.User.Name, resp.User.Email)
+		fmt.Printf("Account created for %s (%s). Please log in.\n", resp.User.Name, resp.User.Email)
 		return nil
 	},
 }
@@ -68,7 +63,7 @@ var authProfileCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("ID:    %s\n", user.ID)
+		fmt.Printf("ID:    %d\n", user.ID)
 		fmt.Printf("Name:  %s\n", user.Name)
 		fmt.Printf("Email: %s\n", user.Email)
 		return nil
