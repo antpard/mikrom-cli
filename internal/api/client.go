@@ -158,13 +158,45 @@ type ListVMsResponse struct {
 	TotalPages int   `json:"total_pages"`
 }
 
-func (c *Client) ListVMs(page, pageSize int) (*ListVMsResponse, error) {
-	resp, err := c.do(http.MethodGet, fmt.Sprintf("/api/v1/vms?page=%d&page_size=%d", page, pageSize), nil)
+// HealthResponse is returned by GET /health.
+type HealthResponse struct {
+	Status string `json:"status"`
+}
+
+// Health calls GET /health and returns the parsed response.
+func (c *Client) Health() (*HealthResponse, error) {
+	resp, err := c.do(http.MethodGet, "/health", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out HealthResponse
+	return &out, c.decode(resp, &out)
+}
+
+func (c *Client) ListVMs(page, pageSize int, status string) (*ListVMsResponse, error) {
+	url := fmt.Sprintf("/api/v1/vms?page=%d&page_size=%d", page, pageSize)
+	resp, err := c.do(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	var out ListVMsResponse
-	return &out, c.decode(resp, &out)
+	if err := c.decode(resp, &out); err != nil {
+		return nil, err
+	}
+
+	// Client-side status filter (the API does not support server-side filtering yet).
+	if status != "" {
+		filtered := out.Items[:0]
+		for _, vm := range out.Items {
+			if vm.Status == status {
+				filtered = append(filtered, vm)
+			}
+		}
+		out.Items = filtered
+		out.Total = int64(len(filtered))
+	}
+
+	return &out, nil
 }
 
 func (c *Client) GetVM(id string) (*VM, error) {

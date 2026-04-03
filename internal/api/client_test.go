@@ -258,7 +258,7 @@ func TestListVMs_Success(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "tok")
-	got, err := c.ListVMs(1, 10)
+	got, err := c.ListVMs(1, 10, "")
 	if err != nil {
 		t.Fatalf("ListVMs() error: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestListVMs_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "tok")
-	_, err := c.ListVMs(1, 10)
+	_, err := c.ListVMs(1, 10, "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

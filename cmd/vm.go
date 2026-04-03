@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spluca/mikrom-cli/internal/api"
@@ -19,10 +22,17 @@ var vmListCmd = &cobra.Command{
 		requireAuth()
 		page, _ := cmd.Flags().GetInt("page")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
+		status, _ := cmd.Flags().GetString("status")
 
-		resp, err := newClient().ListVMs(page, pageSize)
+		resp, err := newClient().ListVMs(page, pageSize, status)
 		if err != nil {
 			return err
+		}
+
+		if isJSON() {
+			data, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		}
 
 		if len(resp.Items) == 0 {
@@ -52,6 +62,12 @@ var vmGetCmd = &cobra.Command{
 			return err
 		}
 
+		if isJSON() {
+			data, _ := json.MarshalIndent(vm, "", "  ")
+			fmt.Println(string(data))
+			return nil
+		}
+
 		printVM(vm)
 		return nil
 	},
@@ -68,6 +84,7 @@ var vmCreateCmd = &cobra.Command{
 		memory, _ := cmd.Flags().GetInt("memory")
 		kernelPath, _ := cmd.Flags().GetString("kernel-path")
 		rootfsPath, _ := cmd.Flags().GetString("rootfs-path")
+		wait, _ := cmd.Flags().GetBool("wait")
 
 		vm, err := newClient().CreateVM(api.CreateVMRequest{
 			Name:        name,
@@ -79,6 +96,20 @@ var vmCreateCmd = &cobra.Command{
 		})
 		if err != nil {
 			return err
+		}
+
+		if wait {
+			fmt.Fprintf(os.Stderr, "Waiting for VM %s to reach running...", vm.ID)
+			vm, err = waitForVM(newClient(), vm.ID, "running", 5*time.Minute)
+			if err != nil {
+				return err
+			}
+		}
+
+		if isJSON() {
+			data, _ := json.MarshalIndent(vm, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		}
 
 		fmt.Printf("VM created: %s\n", vm.ID)
@@ -93,9 +124,20 @@ var vmDeleteCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		requireAuth()
+		wait, _ := cmd.Flags().GetBool("wait")
 
 		if err := newClient().DeleteVM(args[0]); err != nil {
 			return err
+		}
+
+		if wait {
+			fmt.Fprintf(os.Stderr, "Waiting for VM %s to be deleted...", args[0])
+			if err := waitForVMDeleted(newClient(), args[0], 5*time.Minute); err != nil {
+				return err
+			}
+			fmt.Println()
+			fmt.Printf("VM %s deleted\n", args[0])
+			return nil
 		}
 
 		fmt.Printf("VM %s queued for deletion\n", args[0])
@@ -109,9 +151,25 @@ var vmStartCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		requireAuth()
+		wait, _ := cmd.Flags().GetBool("wait")
 
 		if err := newClient().StartVM(args[0]); err != nil {
 			return err
+		}
+
+		if wait {
+			fmt.Fprintf(os.Stderr, "Waiting for VM %s to start...", args[0])
+			vm, err := waitForVM(newClient(), args[0], "running", 5*time.Minute)
+			if err != nil {
+				return err
+			}
+			if isJSON() {
+				data, _ := json.MarshalIndent(vm, "", "  ")
+				fmt.Println(string(data))
+				return nil
+			}
+			printVM(vm)
+			return nil
 		}
 
 		fmt.Printf("VM %s queued to start\n", args[0])
@@ -125,9 +183,25 @@ var vmStopCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		requireAuth()
+		wait, _ := cmd.Flags().GetBool("wait")
 
 		if err := newClient().StopVM(args[0]); err != nil {
 			return err
+		}
+
+		if wait {
+			fmt.Fprintf(os.Stderr, "Waiting for VM %s to stop...", args[0])
+			vm, err := waitForVM(newClient(), args[0], "stopped", 5*time.Minute)
+			if err != nil {
+				return err
+			}
+			if isJSON() {
+				data, _ := json.MarshalIndent(vm, "", "  ")
+				fmt.Println(string(data))
+				return nil
+			}
+			printVM(vm)
+			return nil
 		}
 
 		fmt.Printf("VM %s queued to stop\n", args[0])
@@ -141,9 +215,25 @@ var vmRestartCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		requireAuth()
+		wait, _ := cmd.Flags().GetBool("wait")
 
 		if err := newClient().RestartVM(args[0]); err != nil {
 			return err
+		}
+
+		if wait {
+			fmt.Fprintf(os.Stderr, "Waiting for VM %s to restart...", args[0])
+			vm, err := waitForVM(newClient(), args[0], "running", 5*time.Minute)
+			if err != nil {
+				return err
+			}
+			if isJSON() {
+				data, _ := json.MarshalIndent(vm, "", "  ")
+				fmt.Println(string(data))
+				return nil
+			}
+			printVM(vm)
+			return nil
 		}
 
 		fmt.Printf("VM %s queued to restart\n", args[0])
@@ -173,6 +263,12 @@ var vmUpdateCmd = &cobra.Command{
 			return err
 		}
 
+		if isJSON() {
+			data, _ := json.MarshalIndent(vm, "", "  ")
+			fmt.Println(string(data))
+			return nil
+		}
+
 		printVM(vm)
 		return nil
 	},
@@ -185,7 +281,7 @@ var vmDeployCmd = &cobra.Command{
 and provision a Firecracker microVM from the resulting image.
 
 The VM starts in "building" status and transitions through
-provisioning → running asynchronously. Poll with "mikrom vm get <id>".`,
+provisioning → running asynchronously. Use --wait to block until running.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		requireAuth()
 		name, _ := cmd.Flags().GetString("name")
@@ -195,6 +291,7 @@ provisioning → running asynchronously. Poll with "mikrom vm get <id>".`,
 		repoURL, _ := cmd.Flags().GetString("repo")
 		builder, _ := cmd.Flags().GetString("builder")
 		kernelPath, _ := cmd.Flags().GetString("kernel-path")
+		wait, _ := cmd.Flags().GetBool("wait")
 
 		vm, err := newClient().DeployVM(api.DeployVMRequest{
 			Name:        name,
@@ -209,11 +306,67 @@ provisioning → running asynchronously. Poll with "mikrom vm get <id>".`,
 			return err
 		}
 
+		if wait {
+			fmt.Fprintf(os.Stderr, "Waiting for VM %s to reach running...", vm.ID)
+			vm, err = waitForVM(newClient(), vm.ID, "running", 15*time.Minute)
+			if err != nil {
+				return err
+			}
+		}
+
+		if isJSON() {
+			data, _ := json.MarshalIndent(vm, "", "  ")
+			fmt.Println(string(data))
+			return nil
+		}
+
 		fmt.Printf("Deploy queued: %s (status: %s)\n", vm.ID, vm.Status)
-		fmt.Printf("Poll status with: mikrom vm get %s\n", vm.ID)
+		if !wait {
+			fmt.Printf("Poll status with: mikrom vm get %s\n", vm.ID)
+		}
 		printVM(vm)
 		return nil
 	},
+}
+
+// waitForVM polls GetVM every 2 seconds until the VM reaches targetStatus or
+// "error", or until the timeout elapses. Progress dots are written to stderr.
+func waitForVM(client *api.Client, vmID, targetStatus string, timeout time.Duration) (*api.VM, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(2 * time.Second)
+		vm, err := client.GetVM(vmID)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprint(os.Stderr, ".")
+		if vm.Status == targetStatus {
+			fmt.Fprintln(os.Stderr, " done")
+			return vm, nil
+		}
+		if vm.Status == "error" {
+			fmt.Fprintln(os.Stderr, " error")
+			return nil, fmt.Errorf("VM %s entered error state", vmID)
+		}
+	}
+	return nil, fmt.Errorf("timed out waiting for VM %s to reach %q", vmID, targetStatus)
+}
+
+// waitForVMDeleted polls GetVM until it returns an error (404), indicating
+// the VM has been fully removed.
+func waitForVMDeleted(client *api.Client, vmID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(2 * time.Second)
+		_, err := client.GetVM(vmID)
+		fmt.Fprint(os.Stderr, ".")
+		if err != nil {
+			// Any error here likely means 404 = deleted.
+			fmt.Fprintln(os.Stderr, " done")
+			return nil
+		}
+	}
+	return fmt.Errorf("timed out waiting for VM %s to be deleted", vmID)
 }
 
 func printVM(vm *api.VM) {
@@ -229,6 +382,7 @@ func printVM(vm *api.VM) {
 func init() {
 	vmListCmd.Flags().Int("page", 1, "Page number")
 	vmListCmd.Flags().Int("page-size", 20, "Items per page")
+	vmListCmd.Flags().String("status", "", "Filter by status (pending, running, stopped, error, …)")
 
 	vmCreateCmd.Flags().String("name", "", "VM name")
 	vmCreateCmd.Flags().String("description", "", "VM description")
@@ -236,6 +390,7 @@ func init() {
 	vmCreateCmd.Flags().Int("memory", 512, "Memory in MB (128-32768)")
 	vmCreateCmd.Flags().String("kernel-path", "", "Path to kernel on the agent host (optional)")
 	vmCreateCmd.Flags().String("rootfs-path", "", "Path to rootfs on the agent host (optional)")
+	vmCreateCmd.Flags().Bool("wait", false, "Wait until the VM is running")
 	vmCreateCmd.MarkFlagRequired("name")
 
 	vmUpdateCmd.Flags().String("name", "", "New VM name")
@@ -248,8 +403,14 @@ func init() {
 	vmDeployCmd.Flags().String("repo", "", "Public Git repository URL to build and deploy")
 	vmDeployCmd.Flags().String("builder", "", "Buildpack builder image (default: paketobuildpacks/builder:base)")
 	vmDeployCmd.Flags().String("kernel-path", "", "Path to the kernel on the firecracker-agent host (optional)")
+	vmDeployCmd.Flags().Bool("wait", false, "Wait until the VM is running (build + provisioning can take several minutes)")
 	vmDeployCmd.MarkFlagRequired("name")
 	vmDeployCmd.MarkFlagRequired("repo")
+
+	vmStartCmd.Flags().Bool("wait", false, "Wait until the VM is running")
+	vmStopCmd.Flags().Bool("wait", false, "Wait until the VM is stopped")
+	vmRestartCmd.Flags().Bool("wait", false, "Wait until the VM is running again")
+	vmDeleteCmd.Flags().Bool("wait", false, "Wait until the VM is fully deleted")
 
 	vmCmd.AddCommand(vmListCmd)
 	vmCmd.AddCommand(vmGetCmd)

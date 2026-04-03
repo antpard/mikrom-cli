@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	cfg     *config.Config
-	apiURL  string
-	token   string
+	cfg          *config.Config
+	apiURL       string
+	token        string
+	outputFormat string // "text" or "json"
 )
 
 var rootCmd = &cobra.Command{
@@ -31,10 +32,14 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", "", "Mikrom API URL (overrides config)")
 	rootCmd.PersistentFlags().StringVar(&token, "token", "", "Authentication token (overrides config)")
+	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "Output format: text or json")
 
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(vmCmd)
 	rootCmd.AddCommand(ippoolCmd)
+	rootCmd.AddCommand(contextCmd)
+	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(healthCmd)
 }
 
 func initConfig() {
@@ -61,4 +66,8 @@ func requireAuth() {
 		fmt.Fprintln(os.Stderr, "not authenticated — run: mikrom auth login")
 		os.Exit(1)
 	}
+}
+
+func isJSON() bool {
+	return outputFormat == "json"
 }

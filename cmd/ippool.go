@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -24,6 +25,12 @@ var ippoolListCmd = &cobra.Command{
 		resp, err := newClient().ListIPPools(page, pageSize)
 		if err != nil {
 			return err
+		}
+
+		if isJSON() {
+			data, _ := json.MarshalIndent(resp, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		}
 
 		if len(resp.Items) == 0 {
@@ -58,6 +65,12 @@ var ippoolGetCmd = &cobra.Command{
 			return err
 		}
 
+		if isJSON() {
+			data, _ := json.MarshalIndent(pool, "", "  ")
+			fmt.Println(string(data))
+			return nil
+		}
+
 		printIPPool(pool)
 		return nil
 	},
@@ -85,6 +98,12 @@ var ippoolCreateCmd = &cobra.Command{
 		})
 		if err != nil {
 			return err
+		}
+
+		if isJSON() {
+			data, _ := json.MarshalIndent(pool, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		}
 
 		fmt.Printf("IP pool created: %d\n", pool.ID)
@@ -118,6 +137,12 @@ var ippoolUpdateCmd = &cobra.Command{
 		pool, err := newClient().UpdateIPPool(id, req)
 		if err != nil {
 			return err
+		}
+
+		if isJSON() {
+			data, _ := json.MarshalIndent(pool, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		}
 
 		printIPPool(pool)
@@ -163,6 +188,12 @@ var ippoolStatsCmd = &cobra.Command{
 			return err
 		}
 
+		if isJSON() {
+			data, _ := json.MarshalIndent(stats, "", "  ")
+			fmt.Println(string(data))
+			return nil
+		}
+
 		fmt.Printf("Pool:      %s (ID: %d)\n", stats.PoolName, stats.PoolID)
 		fmt.Printf("Total:     %d\n", stats.Total)
 		fmt.Printf("Allocated: %d\n", stats.Allocated)
@@ -181,6 +212,12 @@ var ippoolAllStatsCmd = &cobra.Command{
 		stats, err := newClient().GetAllPoolStats()
 		if err != nil {
 			return err
+		}
+
+		if isJSON() {
+			data, _ := json.MarshalIndent(stats, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		}
 
 		if len(stats) == 0 {
@@ -207,6 +244,12 @@ var ippoolSuggestRangeCmd = &cobra.Command{
 		result, err := newClient().SuggestIPRange(cidr)
 		if err != nil {
 			return err
+		}
+
+		if isJSON() {
+			data, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(data))
+			return nil
 		}
 
 		fmt.Printf("CIDR:              %s\n", result.CIDR)
